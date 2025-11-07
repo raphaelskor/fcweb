@@ -751,7 +751,7 @@ export default function ContactabilityFormPage() {
               </div>
             )}
 
-            {/* Contact Result */}
+            {/* Contact Result (Required) */}
             <div className="card">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Contact Result <span className="text-red-500">*</span>
