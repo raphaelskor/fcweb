@@ -431,9 +431,9 @@ export default function ContactabilityFormPage() {
         formData.append(key, payload[key]);
       });
 
-      // Add photos if any (use field names: Visit_Image_1, Visit_Image_2, Visit_Image_3)
+      // Add photos if any (use lowercase field names: image1, image2, image3 for API submission)
       photos.forEach((photo, index) => {
-        formData.append(`Visit_Image_${index + 1}`, photo, photo.name);
+        formData.append(`image${index + 1}`, photo, photo.name);
       });
 
       console.log('Submitting with FormData');
