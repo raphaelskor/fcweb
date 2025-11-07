@@ -1,0 +1,68 @@
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fi-next-app
+spec:
+  selector:
+    matchLabels:
+      app: fi-next-app
+  replicas: REPLICAS
+  template:
+    metadata:
+      labels:
+        app: fi-next-app
+    spec:
+      containers:
+      - name: fi-next-app
+        image: IMAGE
+        ports:
+        - containerPort: 80
+        resources:
+          limits: 
+            cpu: 50m
+            memory: 50Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
+      #   readinessProbe:
+      #     httpGet:
+      #       path: /bffmw/health 
+      #       port: 80
+      #     initialDelaySeconds: 5
+      #     periodSeconds: 10
+      # serviceAccountName: sc-bff-middleware-sa
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: fi-next-app-svc
+  namespace: fi-next-app
+spec:
+  selector:
+    app: fi-next-app
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP
+  type: NodePort # LoadBalancer # NodePort # ClusterIP
+
+---
+
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: fi-next-app-tgb
+  namespace: fi-next-app
+spec:
+  serviceRef:
+    name: fi-next-app-svc
+    port: 80
+  targetGroupARN: arn:aws:elasticloadbalancing:ap-southeast-3:235297855793:targetgroup/fi-next-app-tgb/942f781a5e6b36eb
+
