@@ -4,7 +4,7 @@ pipelines:
       - step:
           image: amazon/aws-cli
           name: "prod-Build ,push and deploy"
-          deployment: PROD
+          # deployment: PROD
           services:
             - docker
           runs-on:
