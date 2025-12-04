@@ -12,6 +12,7 @@ interface SkipTracingRecord {
   Source: string;
   Mobile: string;
   Mobile_Status: string | null;
+  Provider: string | null;
   Created_Time: string;
   User_ID?: {
     name: string;
@@ -299,6 +300,10 @@ export default function SkipTracingPage() {
                         )}
                       </div>
                       <div className="space-y-2 text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-700">Provider:</span>
+                          <span className="text-gray-900">{record.Provider || '-'}</span>
+                        </div>
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-gray-700">Source:</span>
                           <span className="text-gray-900">{record.Source || '-'}</span>

@@ -89,7 +89,16 @@ const CONTACT_RESULT_OPTIONS = {
     'Failed to Pay',
   ],
   Call: [
-    // Common results only
+    // Call-specific results
+    'Leave a Message',
+    'Hang Up',
+    'Rejected',
+    'No Answer',
+    'Busy',
+    'Mailbox',
+    'Invalid Number',
+    'Unreachable',
+    // Common results
     'Promise to Pay (PTP)',
     'Negotiation',
     'Hot Prospect',
@@ -146,6 +155,7 @@ export default function ContactabilityFormPage() {
   const [actionLocation, setActionLocation] = useState('');
   const [contactResult, setContactResult] = useState('');
   const [notes, setNotes] = useState('');
+  const [agentName, setAgentName] = useState('');
 
   // PTP fields (conditional)
   const [ptpAmount, setPtpAmount] = useState('');
@@ -173,6 +183,7 @@ export default function ContactabilityFormPage() {
     setPtpAmount('');
     setPtpDate('');
     setNotes('');
+    setAgentName('');
     
     // Reset images if switching to Call
     if (channel === 'Call') {
@@ -336,6 +347,10 @@ export default function ContactabilityFormPage() {
     if (!actionLocation) return 'Action Location is required';
     if (!contactResult) return 'Contact Result is required';
     if (!notes.trim()) return 'Notes are required';
+    
+    // Agent Name validation for non-Skorcard users
+    const isSkorcard = user?.team?.toLowerCase().includes('skorcard');
+    if (!isSkorcard && !agentName.trim()) return 'Agent Name is required';
 
     // Channel-specific validations
     if (channel === 'Visit') {
@@ -371,6 +386,7 @@ export default function ContactabilityFormPage() {
     try {
       // Determine Visit_by_Skor_Team based on user's team
       const visitBySkorTeam = user?.team?.toLowerCase().includes('skorcard') ? 'Yes' : 'No';
+      const isSkorcard = user?.team?.toLowerCase().includes('skorcard');
 
       // Build payload
       const payload: any = {
@@ -383,7 +399,7 @@ export default function ContactabilityFormPage() {
         Contact_Result: contactResult,
         Visit_Notes: notes,
         Visit_by_Skor_Team: visitBySkorTeam,
-        Visit_Agent: user?.name || '',
+        Visit_Agent: isSkorcard ? (user?.name || '') : agentName,
         Visit_Agent_Team_Lead: user?.team || '',
       };
 
@@ -603,14 +619,32 @@ export default function ContactabilityFormPage() {
                   <h2 className="text-lg font-semibold text-gray-900">
                     Location <span className="text-red-500">*</span>
                   </h2>
-                  <button
-                    type="button"
-                    onClick={getCurrentLocation}
-                    disabled={isGettingLocation}
-                    className="btn-outline text-sm"
-                  >
-                    {isGettingLocation ? 'Getting...' : '🔄 Refresh'}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={getCurrentLocation}
+                      disabled={isGettingLocation}
+                      className="btn-outline text-sm"
+                    >
+                      {isGettingLocation ? 'Getting...' : '🔄 Refresh'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (latitude && longitude) {
+                          const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+                          window.open(mapsUrl, '_blank');
+                        } else {
+                          alert('Please get location first');
+                        }
+                      }}
+                      disabled={!latitude || !longitude}
+                      className="btn-outline text-sm"
+                      title="Open in Google Maps"
+                    >
+                      🗺️ Maps
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -678,6 +712,23 @@ export default function ContactabilityFormPage() {
                 ))}
               </select>
             </div>
+
+            {/* Agent Name (Non-Skorcard users only) */}
+            {!user?.team?.toLowerCase().includes('skorcard') && (
+              <div className="card">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  Agent Name <span className="text-red-500">*</span>
+                </h2>
+                <input
+                  type="text"
+                  value={agentName}
+                  onChange={(e) => setAgentName(e.target.value)}
+                  placeholder="Enter agent name"
+                  className="input-field"
+                  required
+                />
+              </div>
+            )}
 
             {/* Action Location */}
             <div className="card">

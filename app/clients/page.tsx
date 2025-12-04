@@ -245,8 +245,12 @@ export default function ClientsPage() {
                   <option value="os-low">Outstanding (Low to High)</option>
                   <option value="dpd-high">DPD (High to Low)</option>
                   <option value="dpd-low">DPD (Low to High)</option>
-                  <option value="buyback-asc">Buy Back Status (A-Z)</option>
-                  <option value="buyback-desc">Buy Back Status (Z-A)</option>
+                  {user?.team?.toLowerCase().includes('skorcard') && (
+                    <>
+                      <option value="buyback-asc">Buy Back Status (A-Z)</option>
+                      <option value="buyback-desc">Buy Back Status (Z-A)</option>
+                    </>
+                  )}
                 </select>
               </div>
 
@@ -392,7 +396,7 @@ export default function ClientsPage() {
                           onClick={(e) => e.stopPropagation()}
                           className="flex-1 btn-outline text-center text-sm py-2"
                         >
-                          Add Contact
+                          Add Contactability
                         </Link>
                       </div>
                     </div>

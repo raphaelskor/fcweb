@@ -6,10 +6,11 @@ export interface User {
   name: string;
   email: string;
   role: string;
-  phone: string;
+  mobile: string;
   team: string;
-  Created_Time: string;
-  Modified_Time: string;
+  created_at: string;
+  updated_at: string;
+  pin: string;
 }
 
 interface AuthState {

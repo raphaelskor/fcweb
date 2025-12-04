@@ -313,17 +313,21 @@ export default function ContactabilityDetailPage() {
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900">Agent</h3>
-                      <p className="text-sm text-gray-600">Field Info</p>
+                      <p className="text-sm text-gray-600">Contact Info</p>
                     </div>
                   </div>
                   <div className="space-y-2">
                     <div>
-                      <p className="text-sm font-medium text-gray-600">Agent</p>
+                      <p className="text-sm font-medium text-gray-600">Visit Agent</p>
                       <p className="text-gray-900">{record.Agent_Name || record.Visit_Agent || record.Call_Agent || '-'}</p>
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-600">Team Lead</p>
+                      <p className="text-sm font-medium text-gray-600">Visit Agent Team Lead</p>
                       <p className="text-gray-900">{record.Visit_Agent_Team_Lead || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Visit by Skor Team</p>
+                      <p className="text-gray-900">{record.Visit_by_Skor_Team || '-'}</p>
                     </div>
                   </div>
                 </div>

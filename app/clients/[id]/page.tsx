@@ -24,17 +24,32 @@ export default function ClientDetailsPage() {
 
   const [client, setClient] = useState<Client | null>(null);
   const [contactHistory, setContactHistory] = useState<Contactability[]>([]);
+  const [filteredContactHistory, setFilteredContactHistory] = useState<Contactability[]>([]);
   const [isLoadingClient, setIsLoadingClient] = useState(true);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [error, setError] = useState('');
+  const [emiRestructuring, setEmiRestructuring] = useState<any>(null);
+  const [isLoadingEMI, setIsLoadingEMI] = useState(false);
 
   // Tabs
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details');
 
+  // Filters for contact history
+  const [dateRangeFilter, setDateRangeFilter] = useState('all');
+  const [resultFilter, setResultFilter] = useState('all');
+
   useEffect(() => {
     fetchClientDetails();
     fetchContactHistory();
-  }, [clientId]);
+    // Fetch EMI Restructuring only for Skorcard team
+    if (user?.team?.toLowerCase().includes('skorcard')) {
+      fetchEMIRestructuring();
+    }
+  }, [clientId, user?.team]);
+
+  useEffect(() => {
+    applyContactHistoryFilters();
+  }, [contactHistory, dateRangeFilter, resultFilter]);
 
   const fetchClientDetails = async () => {
     if (!user?.email) return;
@@ -73,16 +88,41 @@ export default function ClientDetailsPage() {
     try {
       const response = await apiAuth.post('/webhook/0843b27d-6ead-4232-9499-adb2e09cc02e', {
         id: clientId,
+        team: user?.team || '',
+        email: user?.email || '',
       });
 
       if (response.data && Array.isArray(response.data)) {
         const historyData = response.data[0]?.data || [];
         setContactHistory(historyData);
+        setFilteredContactHistory(historyData);
       }
     } catch (error: any) {
       console.error('Fetch history error:', error);
     } finally {
       setIsLoadingHistory(false);
+    }
+  };
+
+  const fetchEMIRestructuring = async () => {
+    setIsLoadingEMI(true);
+
+    try {
+      const response = await apiAuth.post('/webhook/6894fe90-b82f-48b8-bb16-8397a3b54c32', {
+        id: clientId,
+      });
+
+      if (response.data && Array.isArray(response.data)) {
+        const emiData = response.data[0]?.data || [];
+        if (emiData.length > 0) {
+          setEmiRestructuring(emiData[0]);
+        }
+      }
+    } catch (error: any) {
+      console.error('Fetch EMI restructuring error:', error);
+      // Don't show error, just hide the section
+    } finally {
+      setIsLoadingEMI(false);
     }
   };
 
@@ -107,6 +147,57 @@ export default function ClientDetailsPage() {
   const handleCopyPhone = (phone: string) => {
     navigator.clipboard.writeText(phone);
     alert('Phone number copied!');
+  };
+
+  const applyContactHistoryFilters = () => {
+    let filtered = [...contactHistory];
+
+    // Date range filter
+    if (dateRangeFilter !== 'all') {
+      const now = new Date();
+      const filterDate = new Date();
+      
+      switch (dateRangeFilter) {
+        case 'today':
+          filterDate.setHours(0, 0, 0, 0);
+          break;
+        case 'last7days':
+          filterDate.setDate(filterDate.getDate() - 7);
+          break;
+        case 'last30days':
+          filterDate.setDate(filterDate.getDate() - 30);
+          break;
+        case 'thisMonth':
+          filterDate.setDate(1);
+          filterDate.setHours(0, 0, 0, 0);
+          break;
+      }
+
+      filtered = filtered.filter(record => {
+        const recordDate = new Date(record.Contact_Date || new Date());
+        return recordDate >= filterDate;
+      });
+    }
+
+    // Contact result filter
+    if (resultFilter !== 'all') {
+      filtered = filtered.filter(record => record.Contact_Result === resultFilter);
+    }
+
+    // Sort by date (newest first)
+    filtered.sort((a, b) => {
+      const dateA = new Date(a.Contact_Date || new Date()).getTime();
+      const dateB = new Date(b.Contact_Date || new Date()).getTime();
+      return dateB - dateA;
+    });
+
+    setFilteredContactHistory(filtered);
+  };
+
+  // Get unique contact results for filter options
+  const getUniqueContactResults = () => {
+    const results = contactHistory.map(h => h.Contact_Result).filter(Boolean);
+    return Array.from(new Set(results)).sort();
   };
 
   if (isLoadingClient) {
@@ -222,7 +313,7 @@ export default function ClientDetailsPage() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                Contact History ({contactHistory.length})
+                Contactability History ({filteredContactHistory.length})
               </button>
               <Link
                 href={`/clients/${clientId}/history`}
@@ -279,12 +370,14 @@ export default function ClientDetailsPage() {
                     </div>
                   </div>
                   
-                  <div className="card bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
-                    <div className="text-center">
-                      <div className="text-xl font-bold text-blue-700">{client.Buy_Back_Status || '-'}</div>
-                      <div className="text-sm text-blue-600">Buy Back Status</div>
+                  {user?.team?.toLowerCase().includes('skorcard') && (
+                    <div className="card bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+                      <div className="text-center">
+                        <div className="text-xl font-bold text-blue-700">{client.Buy_Back_Status || '-'}</div>
+                        <div className="text-sm text-blue-600">Buy Back Status</div>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Personal Information */}
@@ -351,12 +444,6 @@ export default function ClientDetailsPage() {
                       <div>
                         <label className="text-sm font-medium text-gray-600">Position</label>
                         <p className="text-gray-900">{client.Position_Details || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-600">Income</label>
-                        <p className="text-gray-900">
-                          {client.Income_IDR ? CurrencyFormatter.format(client.Income_IDR) : '-'}
-                        </p>
                       </div>
                     </div>
                   </div>
@@ -475,7 +562,7 @@ export default function ClientDetailsPage() {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Current Address */}
                     <div className="space-y-3">
-                      <h3 className="font-semibold text-gray-800">Current Address (CA)</h3>
+                      <h3 className="font-semibold text-gray-800">Correspondance Address (CA)</h3>
                       <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                         <div className="space-y-2 text-sm">
                           <div><strong>Street:</strong> {client.CA_Line_1 || '-'}</div>
@@ -605,22 +692,26 @@ export default function ClientDetailsPage() {
                       <div className="text-xs text-gray-600 mt-1">Total OS Yesterday</div>
                     </div>
                     
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="text-sm text-gray-600">Last Statement MAD</div>
-                      <div className="text-xl font-bold text-gray-900">
-                        {CurrencyFormatter.format(client.Last_Statement_MAD || 0)}
-                      </div>
-                      <div className="text-xs text-gray-600 mt-1">
-                        Date: {client.Last_Statement_Date ? DateTimeFormatter.format(client.Last_Statement_Date, 'dateOnly') : '-'}
-                      </div>
-                    </div>
-                    
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="text-sm text-gray-600">Last Statement TAD</div>
-                      <div className="text-xl font-bold text-gray-900">
-                        {CurrencyFormatter.format(client.Last_Statement_TAD || 0)}
-                      </div>
-                    </div>
+                    {user?.team?.toLowerCase().includes('skorcard') && (
+                      <>
+                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="text-sm text-gray-600">Last Statement MAD</div>
+                          <div className="text-xl font-bold text-gray-900">
+                            {CurrencyFormatter.format(client.Last_Statement_MAD || 0)}
+                          </div>
+                          <div className="text-xs text-gray-600 mt-1">
+                            Date: {client.Last_Statement_Date ? DateTimeFormatter.format(client.Last_Statement_Date, 'dateOnly') : '-'}
+                          </div>
+                        </div>
+                        
+                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="text-sm text-gray-600">Last Statement TAD</div>
+                          <div className="text-xl font-bold text-gray-900">
+                            {CurrencyFormatter.format(client.Last_Statement_TAD || 0)}
+                          </div>
+                        </div>
+                      </>
+                    )}
                     
                     <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                       <div className="text-sm text-gray-600">Repayment Amount</div>
@@ -629,12 +720,14 @@ export default function ClientDetailsPage() {
                       </div>
                     </div>
                     
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="text-sm text-gray-600">Buyback Amount</div>
-                      <div className="text-xl font-bold text-gray-900">
-                        {CurrencyFormatter.format(client.Buyback_Amount_Paid_By_Skor1 || 0)}
+                    {user?.team?.toLowerCase().includes('skorcard') && (
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Buyback Amount</div>
+                        <div className="text-xl font-bold text-gray-900">
+                          {CurrencyFormatter.format(client.Buyback_Amount_Paid_By_Skor1 || 0)}
+                        </div>
                       </div>
-                    </div>
+                    )}
                     
                     <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                       <div className="text-sm text-gray-600">Credit Limit</div>
@@ -656,12 +749,66 @@ export default function ClientDetailsPage() {
                       </div>
                     </div>
 
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="text-sm text-gray-600">Buy Back Status</div>
-                      <div className="text-lg font-bold text-gray-900">{client.Buy_Back_Status || 'N/A'}</div>
-                    </div>
+                    {user?.team?.toLowerCase().includes('skorcard') && (
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Buy Back Status</div>
+                        <div className="text-lg font-bold text-gray-900">{client.Buy_Back_Status || 'N/A'}</div>
+                      </div>
+                    )}
                   </div>
                 </div>
+
+                {/* EMI Restructuring */}
+                {user?.team?.toLowerCase().includes('skorcard') && emiRestructuring && (
+                  <div className="card">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center">
+                        <svg className="w-4 h-4 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <h2 className="text-lg font-semibold text-gray-900">EMI Restructuring</h2>
+                      {isLoadingEMI && (
+                        <div className="ml-2 w-4 h-4 border-2 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Original Due Amount</div>
+                        <div className="text-xl font-bold text-gray-900">
+                          {CurrencyFormatter.format(emiRestructuring.Original_Due_Amount || 0)}
+                        </div>
+                      </div>
+                      
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Current Due Amount</div>
+                        <div className="text-xl font-bold text-gray-900">
+                          {CurrencyFormatter.format(emiRestructuring.Current_Due_Amount || 0)}
+                        </div>
+                      </div>
+                      
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Total Paid Amount</div>
+                        <div className="text-xl font-bold text-gray-900">
+                          {CurrencyFormatter.format(emiRestructuring.Total_Paid_Amount || 0)}
+                        </div>
+                      </div>
+                      
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Restructure Due Date</div>
+                        <div className="text-lg font-bold text-gray-900">
+                          {emiRestructuring.Due_Date ? DateTimeFormatter.format(emiRestructuring.Due_Date, 'dateOnly') : 'N/A'}
+                        </div>
+                      </div>
+                      
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Restructure Tenure</div>
+                        <div className="text-lg font-bold text-gray-900">{emiRestructuring.Tenure || 'N/A'} months</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Work Information */}
                 {(client.Company_Name || client.Job_Details) && (
@@ -695,12 +842,6 @@ export default function ClientDetailsPage() {
                         <div>
                           <label className="text-sm font-medium text-gray-600">Length of Work</label>
                           <p className="text-gray-900">{client.Length_of_Work || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-sm font-medium text-gray-600">Income (IDR)</label>
-                          <p className="text-gray-900 font-medium">
-                            {client.Income_IDR ? CurrencyFormatter.format(client.Income_IDR) : '-'}
-                          </p>
                         </div>
                         <div>
                           <label className="text-sm font-medium text-gray-600">Department</label>
@@ -904,6 +1045,79 @@ export default function ClientDetailsPage() {
           ) : (
             /* Contact History Tab */
             <div className="space-y-4">
+              {/* Statistics */}
+              {!isLoadingHistory && contactHistory.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="card">
+                    <div className="text-sm text-gray-600 mb-1">Total Contacts</div>
+                    <div className="text-2xl font-bold text-gray-900">{filteredContactHistory.length}</div>
+                  </div>
+                  <div className="card">
+                    <div className="text-sm text-gray-600 mb-1">Visits</div>
+                    <div className="text-2xl font-bold text-blue-600">
+                      {filteredContactHistory.filter(h => h.Channel === 'Visit').length}
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="text-sm text-gray-600 mb-1">Calls</div>
+                    <div className="text-2xl font-bold text-green-600">
+                      {filteredContactHistory.filter(h => h.Channel === 'Call').length}
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="text-sm text-gray-600 mb-1">Messages</div>
+                    <div className="text-2xl font-bold text-purple-600">
+                      {filteredContactHistory.filter(h => h.Channel === 'Message').length}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Filters */}
+              {!isLoadingHistory && contactHistory.length > 0 && (
+                <div className="card">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Filters</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Date Range Filter */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Date Range
+                      </label>
+                      <select
+                        value={dateRangeFilter}
+                        onChange={(e) => setDateRangeFilter(e.target.value)}
+                        className="input-field"
+                      >
+                        <option value="all">All Time</option>
+                        <option value="today">Today</option>
+                        <option value="last7days">Last 7 Days</option>
+                        <option value="last30days">Last 30 Days</option>
+                        <option value="thisMonth">This Month</option>
+                      </select>
+                    </div>
+
+                    {/* Contact Result Filter */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Contact Result
+                      </label>
+                      <select
+                        value={resultFilter}
+                        onChange={(e) => setResultFilter(e.target.value)}
+                        className="input-field"
+                      >
+                        <option value="all">All Results</option>
+                        {getUniqueContactResults().map((result) => (
+                          <option key={result} value={result}>
+                            {result}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {isLoadingHistory ? (
                 <div className="space-y-4">
                   {[1, 2, 3].map((i) => (
@@ -924,9 +1138,25 @@ export default function ClientDetailsPage() {
                     Add First Contact
                   </Link>
                 </div>
+              ) : filteredContactHistory.length === 0 ? (
+                <div className="card text-center py-12">
+                  <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-gray-600 mb-4">No contacts match the selected filters</p>
+                  <button
+                    onClick={() => {
+                      setDateRangeFilter('all');
+                      setResultFilter('all');
+                    }}
+                    className="btn-outline"
+                  >
+                    Clear Filters
+                  </button>
+                </div>
               ) : (
                 <>
-                  {contactHistory.map((contact) => {
+                  {filteredContactHistory.map((contact) => {
                     const handleClick = (e: React.MouseEvent) => {
                       e.preventDefault();
                       // Store data in sessionStorage for clean URL

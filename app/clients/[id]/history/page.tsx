@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuthStore } from '@/lib/store/authStore';
-import { apiClient } from '@/lib/api/client';
+import { apiAuth } from '@/lib/api/client';
 import { Contactability } from '@/lib/types';
 import { DateTimeFormatter } from '@/lib/utils/formatters';
 
@@ -50,8 +50,10 @@ export default function LocationHistoryPage() {
 
     try {
       // API #3: Get contactability history for ONE specific client
-      const response = await apiClient.post('/webhook/0843b27d-6ead-4232-9499-adb2e09cc02e', {
+      const response = await apiAuth.post('/webhook/0843b27d-6ead-4232-9499-adb2e09cc02e', {
         id: clientId,
+        team: user?.team || '',
+        email: user?.email || '',
       });
 
       if (response.data && Array.isArray(response.data)) {
