@@ -1,0 +1,41 @@
+pipelines:
+  custom:
+    prod:
+      - step:
+          image: amazon/aws-cli
+          name: "prod-Build ,push and deploy"
+          # deployment: PROD
+          services:
+            - docker
+          runs-on:
+            - linux.arm64
+            - self.hosted
+            - sc
+            - prod
+          script:
+            #  - pipe: atlassian/git-secrets-scan:1.4.0
+            # # - pipe: sonarsource/sonarqube-scan:1.1.0
+            #   variables:
+            #     SONAR_HOST_URL: ${SONAR_HOST_URL}
+            #     SONAR_TOKEN: ${SONAR_TOKEN}
+            - ECR_REPOSITORY="fi-next-app"
+            - REPLICAS="1"
+            - EKS_CLUSTER="p-sc-eks-application-cluster"
+            - curl -LO https://dl.k8s.io/release/v1.27.1/bin/linux/arm64/kubectl
+            - chmod +x kubectl
+            - mv kubectl /usr/local/bin/
+            - kubectl version --short --client
+            - export BITBUCKET_COMMIT_SHORT=$(echo $BITBUCKET_COMMIT | cut -c1-7)
+            - echo $BITBUCKET_COMMIT_SHORT
+            - export ECR_REGISTRY="$(aws sts get-caller-identity --query 'Account' --output text).dkr.ecr.ap-southeast-3.amazonaws.com"
+            - docker login -u AWS -p $(aws ecr get-login-password --region ap-southeast-3) ${ECR_REGISTRY}
+            - docker build -t ${ECR_REGISTRY}/${ECR_REPOSITORY}:${BITBUCKET_COMMIT_SHORT} -t ${ECR_REGISTRY}/${ECR_REPOSITORY}:latest .
+            - docker push -a ${ECR_REGISTRY}/${ECR_REPOSITORY}
+            - IMAGE=${ECR_REGISTRY}/${ECR_REPOSITORY}:${BITBUCKET_COMMIT_SHORT}
+            - aws eks update-kubeconfig --name ${EKS_CLUSTER} --region ap-southeast-3
+            - sed -i "s|IMAGE|${IMAGE}|g" deploy/fi-next-app-deploy.yaml
+            - sed -i "s/REPLICAS/${REPLICAS}/g" deploy/fi-next-app-deploy.yaml
+            - kubectl apply -f deploy/fi-next-app-deploy.yaml
+            - kubectl get pods -o wide 
+
+ 
