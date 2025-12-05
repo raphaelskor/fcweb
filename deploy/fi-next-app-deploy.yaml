@@ -43,7 +43,6 @@ kind: Service
 apiVersion: v1
 metadata:
   name: fi-next-app-svc
-  namespace: fi-next-app
 spec:
   selector:
     app: fi-next-app
@@ -59,7 +58,6 @@ apiVersion: elbv2.k8s.aws/v1beta1
 kind: TargetGroupBinding
 metadata:
   name: fi-next-app-tgb
-  namespace: fi-next-app
 spec:
   serviceRef:
     name: fi-next-app-svc
