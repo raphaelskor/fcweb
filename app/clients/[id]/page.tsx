@@ -9,6 +9,7 @@ import { useAuthStore } from '@/lib/store/authStore';
 import { apiAuth, apiClient } from '@/lib/api/client';
 import { Client, Contactability } from '@/lib/types';
 import { CurrencyFormatter, DateTimeFormatter, getClientDisplayName } from '@/lib/utils/formatters';
+import { ClientDisplayUtils } from '@/lib/utils/clientDisplayUtils';
 
 // Dynamic import Leaflet to avoid SSR issues
 const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), { ssr: false });
@@ -30,6 +31,15 @@ export default function ClientDetailsPage() {
   const [error, setError] = useState('');
   const [emiRestructuring, setEmiRestructuring] = useState<any>(null);
   const [isLoadingEMI, setIsLoadingEMI] = useState(false);
+  const [hasEmiData, setHasEmiData] = useState(false);
+  
+  // Photo states
+  const [photoPaths, setPhotoPaths] = useState<{ktp: string | null, selfie: string | null}>({
+    ktp: null,
+    selfie: null
+  });
+  const [photoLoading, setPhotoLoading] = useState({ ktp: false, selfie: false });
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   // Tabs
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details');
@@ -46,6 +56,16 @@ export default function ClientDetailsPage() {
       fetchEMIRestructuring();
     }
   }, [clientId, user?.team]);
+
+  useEffect(() => {
+    // Load photos when client data is available
+    if (client) {
+      const skorUserId = ClientDisplayUtils.getSkorUserId(client);
+      if (skorUserId && ClientDisplayUtils.hasValue(skorUserId)) {
+        loadPhotos(skorUserId);
+      }
+    }
+  }, [client]);
 
   useEffect(() => {
     applyContactHistoryFilters();
@@ -116,6 +136,7 @@ export default function ClientDetailsPage() {
         const emiData = response.data[0]?.data || [];
         if (emiData.length > 0) {
           setEmiRestructuring(emiData[0]);
+          setHasEmiData(true);
         }
       }
     } catch (error: any) {
@@ -123,6 +144,49 @@ export default function ClientDetailsPage() {
       // Don't show error, just hide the section
     } finally {
       setIsLoadingEMI(false);
+    }
+  };
+
+  const loadPhotos = async (skorUserId: string) => {
+    setPhotoLoading({ ktp: true, selfie: true });
+    setPhotoError(null);
+    
+    try {
+      // Note: These endpoints would need to be implemented in your API layer
+      // For now, they will fail silently and show placeholders
+      const [ktpResponse, selfieResponse] = await Promise.allSettled([
+        fetch(`/api/photos/ktp/${skorUserId}`, {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }),
+        fetch(`/api/photos/selfie/${skorUserId}`, {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+      ]);
+      
+      // Handle KTP photo
+      if (ktpResponse.status === 'fulfilled' && ktpResponse.value.ok) {
+        const ktpData = await ktpResponse.value.json();
+        if (ktpData.status === 'success') {
+          setPhotoPaths(prev => ({ ...prev, ktp: ktpData.data.photo_url }));
+        }
+      }
+      
+      // Handle Selfie photo  
+      if (selfieResponse.status === 'fulfilled' && selfieResponse.value.ok) {
+        const selfieData = await selfieResponse.value.json();
+        if (selfieData.status === 'success') {
+          setPhotoPaths(prev => ({ ...prev, selfie: selfieData.data.photo_url }));
+        }
+      }
+    } catch (error) {
+      console.error('Photo loading error:', error);
+      // Don't show error to user, just use placeholders
+    } finally {
+      setPhotoLoading({ ktp: false, selfie: false });
     }
   };
 
@@ -380,7 +444,7 @@ export default function ClientDetailsPage() {
                   )}
                 </div>
 
-                {/* Personal Information */}
+                {/* Basic Information */}
                 <div className="card">
                   <div className="flex items-center gap-2 mb-4">
                     <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -388,63 +452,252 @@ export default function ClientDetailsPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                       </svg>
                     </div>
-                    <h2 className="text-lg font-semibold text-gray-900">Personal Information</h2>
+                    <h2 className="text-lg font-semibold text-gray-900">Basic Information</h2>
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="space-y-4">
+                      {/* Client ID */}
+                      <div>
+                        <label className="text-sm font-medium text-gray-600">Client ID</label>
+                        <div className="flex items-center gap-2">
+                          <p className="text-gray-900 font-mono text-sm">{client.id}</p>
+                          <button
+                            onClick={() => ClientDisplayUtils.copyToClipboard(client.id, 'Client ID')}
+                            className="text-blue-600 hover:text-blue-700"
+                            title="Copy Client ID"
+                          >
+                            📋
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Skor User ID */}
+                      {ClientDisplayUtils.hasValue(ClientDisplayUtils.getSkorUserId(client)) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Skor User ID</label>
+                          <p className="text-gray-900 font-mono text-sm">{ClientDisplayUtils.getSkorUserId(client)}</p>
+                        </div>
+                      )}
+
+                      {/* Full Name */}
                       <div>
                         <label className="text-sm font-medium text-gray-600">Full Name</label>
-                        <p className="text-gray-900 font-medium">{client.Full_Name || client.Name1 || '-'}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-gray-900 font-medium">{ClientDisplayUtils.getClientDisplayName(client)}</p>
+                          <button
+                            onClick={() => ClientDisplayUtils.copyToClipboard(ClientDisplayUtils.getClientDisplayName(client), 'Full Name')}
+                            className="text-blue-600 hover:text-blue-700"
+                            title="Copy Full Name"
+                          >
+                            📋
+                          </button>
+                        </div>
                       </div>
+
+                      {/* Mobile Phone */}
                       <div>
-                        <label className="text-sm font-medium text-gray-600">Gender</label>
-                        <p className="text-gray-900">{client.Gender || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-600">Date of Birth</label>
-                        <p className="text-gray-900">
-                          {client.Date_of_Birth ? DateTimeFormatter.format(client.Date_of_Birth, 'dateOnly') : '-'}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-600">Place of Birth</label>
-                        <p className="text-gray-900">{client.Place_of_Birth || '-'}</p>
+                        <label className="text-sm font-medium text-gray-600">Mobile Phone</label>
+                        <div className="flex items-center gap-2">
+                          <p className="text-gray-900 font-medium">{client.Mobile}</p>
+                          <button
+                            onClick={() => ClientDisplayUtils.openWhatsApp(client.Mobile)}
+                            className="p-1 text-green-600 hover:text-green-700"
+                            title="WhatsApp"
+                          >
+                            📱
+                          </button>
+                          <button
+                            onClick={() => ClientDisplayUtils.makePhoneCall(client.Mobile)}
+                            className="p-1 text-blue-600 hover:text-blue-700"
+                            title="Call"
+                          >
+                            📞
+                          </button>
+                        </div>
                       </div>
                     </div>
                     
                     <div className="space-y-4">
+                      {/* Email */}
+                      {ClientDisplayUtils.hasValue(client.Email) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Email</label>
+                          <p className="text-gray-900">{client.Email}</p>
+                        </div>
+                      )}
+
+                      {/* Address */}
                       <div>
-                        <label className="text-sm font-medium text-gray-600">Religion</label>
-                        <p className="text-gray-900">{client.Religion || '-'}</p>
+                        <label className="text-sm font-medium text-gray-600">Address</label>
+                        <div className="flex items-center gap-2">
+                          <p className="text-gray-900">{`${client.CA_Line_1}${client.CA_Line_2 ? ', ' + client.CA_Line_2 : ''}, ${client.CA_City}`}</p>
+                          <button
+                            onClick={() => ClientDisplayUtils.copyToClipboard(`${client.CA_Line_1}${client.CA_Line_2 ? ', ' + client.CA_Line_2 : ''}, ${client.CA_City}`, 'Address')}
+                            className="text-blue-600 hover:text-blue-700"
+                            title="Copy Address"
+                          >
+                            📋
+                          </button>
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-600">Nationality</label>
-                        <p className="text-gray-900">{client.Nationality || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-600">Marital Status</label>
-                        <p className="text-gray-900">{client.Marital_Status || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-600">Spouse Name</label>
-                        <p className="text-gray-900">{client.Spouse_Name || '-'}</p>
-                      </div>
+
+                      {/* Distance */}
+                      {ClientDisplayUtils.hasValue((client as any).distance) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Distance</label>
+                          <p className="text-gray-900">{(client as any).distance}</p>
+                        </div>
+                      )}
                     </div>
                     
                     <div className="space-y-4">
+                      {/* Status */}
                       <div>
-                        <label className="text-sm font-medium text-gray-600">Education</label>
-                        <p className="text-gray-900">{client.Education_Details || '-'}</p>
+                        <label className="text-sm font-medium text-gray-600">Status</label>
+                        <p className="text-gray-900">{client.Current_Status}</p>
                       </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-600">Occupation</label>
-                        <p className="text-gray-900">{client.Job_Details || client.Occupation || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Photos Section */}
+                {ClientDisplayUtils.hasValue(ClientDisplayUtils.getSkorUserId(client)) && (
+                  <div className="card">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
                       </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-600">Position</label>
-                        <p className="text-gray-900">{client.Position_Details || '-'}</p>
+                      <h2 className="text-lg font-semibold text-gray-900">Photos</h2>
+                      {(photoLoading.ktp || photoLoading.selfie) && (
+                        <div className="ml-2 w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                      )}
+                    </div>
+                    
+                    {photoError ? (
+                      <div className="text-center py-8 text-red-600">
+                        <p>Error loading photos: {photoError}</p>
                       </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* KTP Photo */}
+                        <div className="text-center">
+                          <h3 className="font-semibold text-gray-800 mb-2">KTP Photo</h3>
+                          {photoLoading.ktp ? (
+                            <div className="w-full h-48 bg-gray-200 rounded-lg animate-pulse flex items-center justify-center">
+                              <div className="w-8 h-8 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                          ) : photoPaths.ktp ? (
+                            <img
+                              src={photoPaths.ktp}
+                              alt="KTP Photo"
+                              className="w-full h-48 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                              onClick={() => window.open(photoPaths.ktp!, '_blank')}
+                            />
+                          ) : (
+                            <div className="w-full h-48 bg-gray-100 rounded-lg border flex items-center justify-center text-gray-500">
+                              No KTP photo available
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Selfie Photo */}
+                        <div className="text-center">
+                          <h3 className="font-semibold text-gray-800 mb-2">Selfie Photo</h3>
+                          {photoLoading.selfie ? (
+                            <div className="w-full h-48 bg-gray-200 rounded-lg animate-pulse flex items-center justify-center">
+                              <div className="w-8 h-8 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                          ) : photoPaths.selfie ? (
+                            <img
+                              src={photoPaths.selfie}
+                              alt="Selfie Photo"
+                              className="w-full h-48 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                              onClick={() => window.open(photoPaths.selfie!, '_blank')}
+                            />
+                          ) : (
+                            <div className="w-full h-48 bg-gray-100 rounded-lg border flex items-center justify-center text-gray-500">
+                              No selfie photo available
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Personal Information */}
+                <div className="card">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </div>
+                    <h2 className="text-lg font-semibold text-gray-900">Personal Information</h2>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      {ClientDisplayUtils.hasValue(client.Gender) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Gender</label>
+                          <p className="text-gray-900">{client.Gender}</p>
+                        </div>
+                      )}
+                      {ClientDisplayUtils.hasValue(client.Date_of_Birth) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Date of Birth</label>
+                          <p className="text-gray-900">{ClientDisplayUtils.formatDate(client.Date_of_Birth)}</p>
+                        </div>
+                      )}
+                      {ClientDisplayUtils.hasValue(client.Place_of_Birth) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Place of Birth</label>
+                          <p className="text-gray-900">{client.Place_of_Birth}</p>
+                        </div>
+                      )}
+                      {ClientDisplayUtils.hasValue(client.Religion) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Religion</label>
+                          <p className="text-gray-900">{client.Religion}</p>
+                        </div>
+                      )}
+                      {ClientDisplayUtils.hasValue(client.Nationality) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Nationality</label>
+                          <p className="text-gray-900">{client.Nationality}</p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {ClientDisplayUtils.hasValue(client.Marital_Status) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Marital Status</label>
+                          <p className="text-gray-900">{client.Marital_Status}</p>
+                        </div>
+                      )}
+                      {ClientDisplayUtils.hasValue(client.Spouse_Name) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Spouse Name</label>
+                          <p className="text-gray-900">{client.Spouse_Name}</p>
+                        </div>
+                      )}
+                      {ClientDisplayUtils.hasValue(client.Mother_Name) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Mother's Name</label>
+                          <p className="text-gray-900">{client.Mother_Name}</p>
+                        </div>
+                      )}
+                      {ClientDisplayUtils.hasValue(client.Education_Details) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Education</label>
+                          <p className="text-gray-900">{client.Education_Details}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -492,58 +745,176 @@ export default function ClientDetailsPage() {
                       </div>
                     </div>
 
-                    {/* Additional Phone Numbers */}
+                    {/* Additional Contact Information */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {client.Home_Phone && (
+                      {/* Home Phone */}
+                      {ClientDisplayUtils.hasValue(client.Home_Phone) && (
                         <div className="p-3 bg-gray-50 rounded-lg">
                           <div className="text-sm text-gray-600">Home Phone</div>
-                          <div className="font-medium text-gray-900">{client.Home_Phone}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="font-medium text-gray-900">{client.Home_Phone}</div>
+                            <button
+                              onClick={() => ClientDisplayUtils.openWhatsApp(client.Home_Phone!)}
+                              className="text-green-600 hover:text-green-700"
+                              title="WhatsApp"
+                            >
+                              💬
+                            </button>
+                            <button
+                              onClick={() => ClientDisplayUtils.makePhoneCall(client.Home_Phone!)}
+                              className="text-blue-600 hover:text-blue-700"
+                              title="Call"
+                            >
+                              📞
+                            </button>
+                          </div>
                         </div>
                       )}
-                      {client.Office_Phone && (
+
+                      {/* Office Phone */}
+                      {ClientDisplayUtils.hasValue(client.Office_Phone) && (
                         <div className="p-3 bg-gray-50 rounded-lg">
                           <div className="text-sm text-gray-600">Office Phone</div>
-                          <div className="font-medium text-gray-900">{client.Office_Phone}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="font-medium text-gray-900">{client.Office_Phone}</div>
+                            <button
+                              onClick={() => ClientDisplayUtils.openWhatsApp(client.Office_Phone!)}
+                              className="text-green-600 hover:text-green-700"
+                              title="WhatsApp"
+                            >
+                              💬
+                            </button>
+                            <button
+                              onClick={() => ClientDisplayUtils.makePhoneCall(client.Office_Phone!)}
+                              className="text-blue-600 hover:text-blue-700"
+                              title="Call"
+                            >
+                              📞
+                            </button>
+                          </div>
                         </div>
                       )}
-                      {client.Any_other_phone_No && (
+
+                      {/* Other Phone */}
+                      {ClientDisplayUtils.hasValue(client.Any_other_phone_No) && (
                         <div className="p-3 bg-gray-50 rounded-lg">
                           <div className="text-sm text-gray-600">Other Phone</div>
-                          <div className="font-medium text-gray-900">{client.Any_other_phone_No}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="font-medium text-gray-900">{client.Any_other_phone_No}</div>
+                            <button
+                              onClick={() => ClientDisplayUtils.openWhatsApp(client.Any_other_phone_No!)}
+                              className="text-green-600 hover:text-green-700"
+                              title="WhatsApp"
+                            >
+                              💬
+                            </button>
+                            <button
+                              onClick={() => ClientDisplayUtils.makePhoneCall(client.Any_other_phone_No!)}
+                              className="text-blue-600 hover:text-blue-700"
+                              title="Call"
+                            >
+                              📞
+                            </button>
+                          </div>
                         </div>
                       )}
-                      {/* Show mobile numbers 1-10 */}
-                      {[1,2,3,4,5,6,7,8,9,10].map(num => {
-                        const mobileField = `Mobile_${num}` as keyof typeof client;
-                        const mobileValue = client[mobileField];
-                        return mobileValue && typeof mobileValue === 'string' ? (
-                          <div key={num} className="p-3 bg-gray-50 rounded-lg">
-                            <div className="text-sm text-gray-600">Mobile {num}</div>
-                            <div className="font-medium text-gray-900">{mobileValue}</div>
-                          </div>
-                        ) : null;
-                      })}
-                    </div>
 
-                    {/* Email */}
-                    {client.Email && (
-                      <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
-                        <div className="flex items-center gap-3">
-                          <span className="text-lg">✉️</span>
-                          <div>
-                            <div className="text-sm text-gray-600">Email</div>
-                            <div className="font-medium text-gray-900">{client.Email}</div>
+                      {/* Email */}
+                      {ClientDisplayUtils.hasValue(client.Email) && (
+                        <div className="p-3 bg-gray-50 rounded-lg">
+                          <div className="text-sm text-gray-600">Email</div>
+                          <div className="font-medium text-gray-900">{client.Email}</div>
+                        </div>
+                      )}
+
+                      {/* Emergency Contact 1 Name */}
+                      {ClientDisplayUtils.hasValue(client.EC1_Name) && (
+                        <div className="p-3 bg-gray-50 rounded-lg">
+                          <div className="text-sm text-gray-600">Emergency Contact 1 Name</div>
+                          <div className="font-medium text-gray-900">{client.EC1_Name}</div>
+                        </div>
+                      )}
+
+                      {/* EC1 Phone */}
+                      {ClientDisplayUtils.hasValue(client.EC1_Phone) && (
+                        <div className="p-3 bg-gray-50 rounded-lg">
+                          <div className="text-sm text-gray-600">EC1 Phone</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="font-medium text-gray-900">{client.EC1_Phone}</div>
+                            <button
+                              onClick={() => ClientDisplayUtils.openWhatsApp(client.EC1_Phone!)}
+                              className="text-green-600 hover:text-green-700"
+                              title="WhatsApp"
+                            >
+                              💬
+                            </button>
+                            <button
+                              onClick={() => ClientDisplayUtils.makePhoneCall(client.EC1_Phone!)}
+                              className="text-blue-600 hover:text-blue-700"
+                              title="Call"
+                            >
+                              📞
+                            </button>
                           </div>
                         </div>
-                        <button
-                          onClick={() => handleEmail(client.Email!)}
-                          className="p-2 rounded-lg bg-primary-50 text-primary-600 hover:bg-primary-100"
-                          title="Send Email"
-                        >
-                          ✉️
-                        </button>
-                      </div>
-                    )}
+                      )}
+
+                      {/* EC1 Relation */}
+                      {ClientDisplayUtils.hasValue(client.EC1_Relation) && (
+                        <div className="p-3 bg-gray-50 rounded-lg">
+                          <div className="text-sm text-gray-600">EC1 Relation</div>
+                          <div className="font-medium text-gray-900">{client.EC1_Relation}</div>
+                        </div>
+                      )}
+
+                      {/* Emergency Contact 2 Name */}
+                      {ClientDisplayUtils.hasValue(client.EC2_Name) && (
+                        <div className="p-3 bg-gray-50 rounded-lg">
+                          <div className="text-sm text-gray-600">Emergency Contact 2 Name</div>
+                          <div className="font-medium text-gray-900">{client.EC2_Name}</div>
+                        </div>
+                      )}
+
+                      {/* EC2 Phone */}
+                      {ClientDisplayUtils.hasValue(client.EC2_Phone) && (
+                        <div className="p-3 bg-gray-50 rounded-lg">
+                          <div className="text-sm text-gray-600">EC2 Phone</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="font-medium text-gray-900">{client.EC2_Phone}</div>
+                            <button
+                              onClick={() => ClientDisplayUtils.openWhatsApp(client.EC2_Phone!)}
+                              className="text-green-600 hover:text-green-700"
+                              title="WhatsApp"
+                            >
+                              💬
+                            </button>
+                            <button
+                              onClick={() => ClientDisplayUtils.makePhoneCall(client.EC2_Phone!)}
+                              className="text-blue-600 hover:text-blue-700"
+                              title="Call"
+                            >
+                              📞
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* EC2 Relation */}
+                      {ClientDisplayUtils.hasValue(client.EC2_Relation) && (
+                        <div className="p-3 bg-gray-50 rounded-lg">
+                          <div className="text-sm text-gray-600">EC2 Relation</div>
+                          <div className="font-medium text-gray-900">{client.EC2_Relation}</div>
+                        </div>
+                      )}
+
+                      {/* Emergency Contact */}
+                      {ClientDisplayUtils.hasValue(client.Emegency_Contact_Name) && (
+                        <div className="p-3 bg-gray-50 rounded-lg">
+                          <div className="text-sm text-gray-600">Emergency Contact</div>
+                          <div className="font-medium text-gray-900">{client.Emegency_Contact_Name}</div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -559,20 +930,52 @@ export default function ClientDetailsPage() {
                     <h2 className="text-lg font-semibold text-gray-900">Address Information</h2>
                   </div>
                   
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Current Address */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Correspondence Address (CA) */}
                     <div className="space-y-3">
-                      <h3 className="font-semibold text-gray-800">Correspondance Address (CA)</h3>
+                      <h3 className="font-semibold text-gray-800">Correspondence Address (CA)</h3>
                       <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                         <div className="space-y-2 text-sm">
-                          <div><strong>Street:</strong> {client.CA_Line_1 || '-'}</div>
-                          <div><strong>Line 2:</strong> {client.CA_Line_2 || '-'}</div>
-                          <div><strong>RT/RW:</strong> {client.CA_RT_RW || '-'}</div>
-                          <div><strong>Sub District:</strong> {client.CA_Sub_District || '-'}</div>
-                          <div><strong>District:</strong> {client.CA_District || '-'}</div>
-                          <div><strong>City:</strong> {client.CA_City || '-'}</div>
-                          <div><strong>Province:</strong> {client.CA_Province || '-'}</div>
-                          <div><strong>Zip Code:</strong> {client.CA_ZipCode || '-'}</div>
+                          {/* Combined Address Lines */}
+                          {ClientDisplayUtils.combineAddressLines(client, 'CA') && (
+                            <div className="flex items-center gap-2">
+                              <div><strong>Address:</strong> {ClientDisplayUtils.combineAddressLines(client, 'CA')}</div>
+                              <button
+                                onClick={() => ClientDisplayUtils.copyToClipboard(ClientDisplayUtils.combineAddressLines(client, 'CA')!, 'Address')}
+                                className="text-blue-600 hover:text-blue-700"
+                                title="Copy Address"
+                              >
+                                📋
+                              </button>
+                            </div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.CA_RT_RW) && (
+                            <div><strong>RT/RW:</strong> {client.CA_RT_RW}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.CA_Sub_District) && (
+                            <div><strong>Sub District:</strong> {client.CA_Sub_District}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.CA_District) && (
+                            <div><strong>District:</strong> {client.CA_District}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.CA_City) && (
+                            <div><strong>City:</strong> {client.CA_City}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.CA_Province) && (
+                            <div><strong>Province:</strong> {client.CA_Province}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.CA_ZipCode) && (
+                            <div className="flex items-center gap-2">
+                              <div><strong>Zip Code:</strong> {client.CA_ZipCode}</div>
+                              <button
+                                onClick={() => ClientDisplayUtils.copyToClipboard(client.CA_ZipCode!, 'Zip Code')}
+                                className="text-blue-600 hover:text-blue-700"
+                                title="Copy Zip Code"
+                              >
+                                📋
+                              </button>
+                            </div>
+                          )}
                         </div>
                         <button
                           onClick={() => handleOpenMaps(fullAddress)}
@@ -588,35 +991,146 @@ export default function ClientDetailsPage() {
                       <h3 className="font-semibold text-gray-800">KTP Address</h3>
                       <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                         <div className="space-y-2 text-sm">
-                          <div><strong>Address:</strong> {client.KTP_Address || '-'}</div>
-                          <div><strong>Village:</strong> {client.KTP_Village || '-'}</div>
-                          <div><strong>District:</strong> {client.KTP_District || '-'}</div>
-                          <div><strong>City:</strong> {client.KTP_City || '-'}</div>
-                          <div><strong>Province:</strong> {client.KTP_Province || '-'}</div>
-                          <div><strong>Postal Code:</strong> {client.KTP_Postal_Code || '-'}</div>
+                          {ClientDisplayUtils.hasValue(client.KTP_Address) && (
+                            <div className="flex items-center gap-2">
+                              <div><strong>Address:</strong> {client.KTP_Address}</div>
+                              <button
+                                onClick={() => ClientDisplayUtils.copyToClipboard(client.KTP_Address!, 'KTP Address')}
+                                className="text-blue-600 hover:text-blue-700"
+                                title="Copy KTP Address"
+                              >
+                                📋
+                              </button>
+                            </div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.KTP_Village) && (
+                            <div><strong>Village:</strong> {client.KTP_Village}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.KTP_District) && (
+                            <div><strong>District:</strong> {client.KTP_District}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.KTP_City) && (
+                            <div><strong>City:</strong> {client.KTP_City}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.KTP_Province) && (
+                            <div><strong>Province:</strong> {client.KTP_Province}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.KTP_Postal_Code) && (
+                            <div className="flex items-center gap-2">
+                              <div><strong>Postal Code:</strong> {client.KTP_Postal_Code}</div>
+                              <button
+                                onClick={() => ClientDisplayUtils.copyToClipboard(client.KTP_Postal_Code!, 'KTP Postal Code')}
+                                className="text-blue-600 hover:text-blue-700"
+                                title="Copy Postal Code"
+                              >
+                                📋
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    {/* Office Address */}
-                    {client.Office_Address_City && (
-                      <div className="space-y-3">
-                        <h3 className="font-semibold text-gray-800">Office Address (OA)</h3>
-                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                          <div className="space-y-2 text-sm">
-                            <div><strong>Line 1:</strong> {client.OA_Line_1 || '-'}</div>
-                            <div><strong>Line 2:</strong> {client.OA_Line_2 || '-'}</div>
-                            <div><strong>RT/RW:</strong> {client.OA_RT_RW || '-'}</div>
-                            <div><strong>Sub District:</strong> {client.Office_Address_SubDistrict || '-'}</div>
-                            <div><strong>District:</strong> {client.Office_Address_District || '-'}</div>
-                            <div><strong>City:</strong> {client.Office_Address_City || '-'}</div>
-                            <div><strong>Province:</strong> {client.Office_Address_Province || '-'}</div>
-                            <div><strong>Zip Code:</strong> {client.Office_Address_Zipcode || '-'}</div>
-                          </div>
+                    {/* Residence Address (RA) */}
+                    <div className="space-y-3">
+                      <h3 className="font-semibold text-gray-800">Residence Address (RA)</h3>
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="space-y-2 text-sm">
+                          {/* Combined Address Lines */}
+                          {ClientDisplayUtils.combineAddressLines(client, 'RA') && (
+                            <div className="flex items-center gap-2">
+                              <div><strong>Address:</strong> {ClientDisplayUtils.combineAddressLines(client, 'RA')}</div>
+                              <button
+                                onClick={() => ClientDisplayUtils.copyToClipboard(ClientDisplayUtils.combineAddressLines(client, 'RA')!, 'Residence Address')}
+                                className="text-blue-600 hover:text-blue-700"
+                                title="Copy Residence Address"
+                              >
+                                📋
+                              </button>
+                            </div>
+                          )}
+                          {ClientDisplayUtils.hasValue((client as any).RA_RT_RW) && (
+                            <div><strong>RT/RW:</strong> {(client as any).RA_RT_RW}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue((client as any).Residence_Address_SubDistrict) && (
+                            <div><strong>Sub District:</strong> {(client as any).Residence_Address_SubDistrict}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue((client as any).RA_District) && (
+                            <div><strong>District:</strong> {(client as any).RA_District}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue((client as any).Residence_Address_City) && (
+                            <div><strong>City:</strong> {(client as any).Residence_Address_City}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue((client as any).Residence_Address_Province) && (
+                            <div><strong>Province:</strong> {(client as any).Residence_Address_Province}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue((client as any).RA_Zip_Code) && (
+                            <div className="flex items-center gap-2">
+                              <div><strong>Zip Code:</strong> {(client as any).RA_Zip_Code}</div>
+                              <button
+                                onClick={() => ClientDisplayUtils.copyToClipboard((client as any).RA_Zip_Code, 'RA Zip Code')}
+                                className="text-blue-600 hover:text-blue-700"
+                                title="Copy Zip Code"
+                              >
+                                📋
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    )}
+                    </div>
                   </div>
+                  
+                  {/* Office Address (OA) - Only show if data exists */}
+                  {(ClientDisplayUtils.hasValue(client.Office_Address_City) || ClientDisplayUtils.combineAddressLines(client, 'OA')) && (
+                    <div className="mt-6">
+                      <h3 className="font-semibold text-gray-800 mb-3">Office Address (OA)</h3>
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                          {/* Combined Address Lines */}
+                          {ClientDisplayUtils.combineAddressLines(client, 'OA') && (
+                            <div className="flex items-center gap-2">
+                              <div><strong>Address:</strong> {ClientDisplayUtils.combineAddressLines(client, 'OA')}</div>
+                              <button
+                                onClick={() => ClientDisplayUtils.copyToClipboard(ClientDisplayUtils.combineAddressLines(client, 'OA')!, 'Office Address')}
+                                className="text-blue-600 hover:text-blue-700"
+                                title="Copy Office Address"
+                              >
+                                📋
+                              </button>
+                            </div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.OA_RT_RW) && (
+                            <div><strong>RT/RW:</strong> {client.OA_RT_RW}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.Office_Address_SubDistrict) && (
+                            <div><strong>Sub District:</strong> {client.Office_Address_SubDistrict}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.Office_Address_District) && (
+                            <div><strong>District:</strong> {client.Office_Address_District}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.Office_Address_City) && (
+                            <div><strong>City:</strong> {client.Office_Address_City}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.Office_Address_Province) && (
+                            <div><strong>Province:</strong> {client.Office_Address_Province}</div>
+                          )}
+                          {ClientDisplayUtils.hasValue(client.Office_Address_Zipcode) && (
+                            <div className="flex items-center gap-2">
+                              <div><strong>Zip Code:</strong> {client.Office_Address_Zipcode}</div>
+                              <button
+                                onClick={() => ClientDisplayUtils.copyToClipboard(client.Office_Address_Zipcode!, 'Office Zip Code')}
+                                className="text-blue-600 hover:text-blue-700"
+                                title="Copy Office Zip Code"
+                              >
+                                📋
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Emergency Contacts */}
@@ -684,82 +1198,133 @@ export default function ClientDetailsPage() {
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="text-sm text-gray-600">Current Outstanding</div>
-                      <div className="text-xl font-bold text-gray-900">
-                        {CurrencyFormatter.format(client.Total_OS_Yesterday1 || 0)}
-                      </div>
-                      <div className="text-xs text-gray-600 mt-1">Total OS Yesterday</div>
-                    </div>
-                    
-                    {user?.team?.toLowerCase().includes('skorcard') && (
-                      <>
-                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                          <div className="text-sm text-gray-600">Last Statement MAD</div>
-                          <div className="text-xl font-bold text-gray-900">
-                            {CurrencyFormatter.format(client.Last_Statement_MAD || 0)}
-                          </div>
-                          <div className="text-xs text-gray-600 mt-1">
-                            Date: {client.Last_Statement_Date ? DateTimeFormatter.format(client.Last_Statement_Date, 'dateOnly') : '-'}
-                          </div>
-                        </div>
-                        
-                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                          <div className="text-sm text-gray-600">Last Statement TAD</div>
-                          <div className="text-xl font-bold text-gray-900">
-                            {CurrencyFormatter.format(client.Last_Statement_TAD || 0)}
-                          </div>
-                        </div>
-                      </>
-                    )}
-                    
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="text-sm text-gray-600">Repayment Amount</div>
-                      <div className="text-xl font-bold text-gray-900">
-                        {CurrencyFormatter.format(client.Repayment_Amount || 0)}
-                      </div>
-                    </div>
-                    
-                    {user?.team?.toLowerCase().includes('skorcard') && (
+                    {/* Total Outstanding - Always visible */}
+                    {ClientDisplayUtils.hasValue(client.Total_OS_Yesterday1) && (
                       <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <div className="text-sm text-gray-600">Buyback Amount</div>
+                        <div className="text-sm text-gray-600">Total Outstanding</div>
                         <div className="text-xl font-bold text-gray-900">
-                          {CurrencyFormatter.format(client.Buyback_Amount_Paid_By_Skor1 || 0)}
+                          {ClientDisplayUtils.formatCurrency(client.Total_OS_Yesterday1)}
                         </div>
                       </div>
                     )}
-                    
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="text-sm text-gray-600">Credit Limit</div>
-                      <div className="text-xl font-bold text-gray-900">
-                        {client.Credit_Limit ? CurrencyFormatter.format(client.Credit_Limit) : 'N/A'}
+
+                    {/* Last Statement MAD - Skorcard only, exclude if Buy_Back_Status is "True" */}
+                    {ClientDisplayUtils.isSkorCardUser(user?.team) && 
+                     ClientDisplayUtils.hasValue(client.Last_Statement_MAD) && 
+                     client.Buy_Back_Status !== "True" && (
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Last Statement MAD</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-xl font-bold text-gray-900">
+                            {ClientDisplayUtils.formatCurrency(client.Last_Statement_MAD)}
+                          </div>
+                          <button
+                            onClick={() => ClientDisplayUtils.copyToClipboard(ClientDisplayUtils.formatCurrency(client.Last_Statement_MAD), 'Last Statement MAD')}
+                            className="text-blue-600 hover:text-blue-700"
+                            title="Copy MAD"
+                          >
+                            📋
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="text-sm text-gray-600">Age in Bank</div>
-                      <div className="text-xl font-bold text-gray-900">{client.Age_in_Bank || 0}</div>
-                      <div className="text-xs text-gray-600 mt-1">Days</div>
-                    </div>
-
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="text-sm text-gray-600">Latest Due Date</div>
-                      <div className="text-lg font-bold text-gray-900">
-                        {client.Latest_Statement_Due_Date ? DateTimeFormatter.format(client.Latest_Statement_Due_Date, 'dateOnly') : 'N/A'}
+                    {/* Last Statement TAD - Skorcard only, exclude if Buy_Back_Status is "True" */}
+                    {ClientDisplayUtils.isSkorCardUser(user?.team) && 
+                     ClientDisplayUtils.hasValue(client.Last_Statement_TAD) && 
+                     client.Buy_Back_Status !== "True" && (
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Last Statement TAD</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-xl font-bold text-gray-900">
+                            {ClientDisplayUtils.formatCurrency(client.Last_Statement_TAD)}
+                          </div>
+                          <button
+                            onClick={() => ClientDisplayUtils.copyToClipboard(ClientDisplayUtils.formatCurrency(client.Last_Statement_TAD), 'Last Statement TAD')}
+                            className="text-blue-600 hover:text-blue-700"
+                            title="Copy TAD"
+                          >
+                            📋
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    {user?.team?.toLowerCase().includes('skorcard') && (
+                    {/* Last Payment Amount */}
+                    {ClientDisplayUtils.hasValue(client.Last_Payment_Amount) && (
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Last Payment Amount</div>
+                        <div className="text-xl font-bold text-gray-900">
+                          {ClientDisplayUtils.formatCurrency(client.Last_Payment_Amount)}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Last Payment Date */}
+                    {ClientDisplayUtils.hasValue(client.Last_Payment_Date) && (
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Last Payment Date</div>
+                        <div className="text-lg font-bold text-gray-900">
+                          {ClientDisplayUtils.formatDate(client.Last_Payment_Date)}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Rep Status Current Bill */}
+                    {ClientDisplayUtils.hasValue((client as any).Rep_Status_Current_Bill) && (
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Rep Status Current Bill</div>
+                        <div className="text-lg font-bold text-gray-900">
+                          {(client as any).Rep_Status_Current_Bill}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Repayment Amount */}
+                    {ClientDisplayUtils.hasValue(client.Repayment_Amount) && (
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Repayment Amount</div>
+                        <div className="text-xl font-bold text-gray-900">
+                          {ClientDisplayUtils.formatCurrency(client.Repayment_Amount)}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Buy Back Status - Skorcard only */}
+                    {ClientDisplayUtils.isSkorCardUser(user?.team) && 
+                     ClientDisplayUtils.hasValue(client.Buy_Back_Status) && (
                       <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                         <div className="text-sm text-gray-600">Buy Back Status</div>
-                        <div className="text-lg font-bold text-gray-900">{client.Buy_Back_Status || 'N/A'}</div>
+                        <div className="text-lg font-bold text-gray-900">
+                          {client.Buy_Back_Status}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Days Past Due */}
+                    {ClientDisplayUtils.hasValue(client.Days_Past_Due) && (
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">Days Past Due</div>
+                        <div className="text-xl font-bold text-gray-900">
+                          {client.Days_Past_Due}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* DPD Bucket */}
+                    {ClientDisplayUtils.hasValue(client.DPD_Bucket) && (
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="text-sm text-gray-600">DPD Bucket</div>
+                        <div className="text-lg font-bold text-gray-900">
+                          {client.DPD_Bucket}
+                        </div>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* EMI Restructuring */}
-                {user?.team?.toLowerCase().includes('skorcard') && emiRestructuring && (
+                {/* EMI Restructuring - Skorcard only */}
+                {ClientDisplayUtils.isSkorCardUser(user?.team) && hasEmiData && emiRestructuring && (
                   <div className="card">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center">
@@ -767,90 +1332,189 @@ export default function ClientDetailsPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                         </svg>
                       </div>
-                      <h2 className="text-lg font-semibold text-gray-900">EMI Restructuring</h2>
+                      <h2 className="text-lg font-semibold text-gray-900">EMI Restructuring Information</h2>
                       {isLoadingEMI && (
                         <div className="ml-2 w-4 h-4 border-2 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
                       )}
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <div className="text-sm text-gray-600">Original Due Amount</div>
-                        <div className="text-xl font-bold text-gray-900">
-                          {CurrencyFormatter.format(emiRestructuring.Original_Due_Amount || 0)}
+                      {/* Original Due Amount */}
+                      {ClientDisplayUtils.hasValue(emiRestructuring.Original_Due_Amount) && (
+                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="text-sm text-gray-600">Original Due Amount</div>
+                          <div className="text-xl font-bold text-gray-900">
+                            {ClientDisplayUtils.formatCurrency(emiRestructuring.Original_Due_Amount)}
+                          </div>
                         </div>
-                      </div>
-                      
-                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <div className="text-sm text-gray-600">Current Due Amount</div>
-                        <div className="text-xl font-bold text-gray-900">
-                          {CurrencyFormatter.format(emiRestructuring.Current_Due_Amount || 0)}
+                      )}
+
+                      {/* Restructure Due Date */}
+                      {ClientDisplayUtils.hasValue(emiRestructuring.Due_Date) && (
+                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="text-sm text-gray-600">Restructure Due Date</div>
+                          <div className="text-lg font-bold text-gray-900">
+                            {ClientDisplayUtils.formatDate(emiRestructuring.Due_Date)}
+                          </div>
                         </div>
-                      </div>
-                      
-                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <div className="text-sm text-gray-600">Total Paid Amount</div>
-                        <div className="text-xl font-bold text-gray-900">
-                          {CurrencyFormatter.format(emiRestructuring.Total_Paid_Amount || 0)}
+                      )}
+
+                      {/* Restructure Tenure */}
+                      {ClientDisplayUtils.hasValue(emiRestructuring.Tenure) && (
+                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="text-sm text-gray-600">Restructure Tenure</div>
+                          <div className="text-lg font-bold text-gray-900">
+                            {emiRestructuring.Tenure} months
+                          </div>
                         </div>
-                      </div>
+                      )}
                       
-                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <div className="text-sm text-gray-600">Restructure Due Date</div>
-                        <div className="text-lg font-bold text-gray-900">
-                          {emiRestructuring.Due_Date ? DateTimeFormatter.format(emiRestructuring.Due_Date, 'dateOnly') : 'N/A'}
+                      {/* Current Due Amount */}
+                      {ClientDisplayUtils.hasValue(emiRestructuring.Current_Due_Amount) && (
+                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="text-sm text-gray-600">Current Due Amount</div>
+                          <div className="text-xl font-bold text-gray-900">
+                            {ClientDisplayUtils.formatCurrency(emiRestructuring.Current_Due_Amount)}
+                          </div>
                         </div>
-                      </div>
+                      )}
                       
-                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <div className="text-sm text-gray-600">Restructure Tenure</div>
-                        <div className="text-lg font-bold text-gray-900">{emiRestructuring.Tenure || 'N/A'} months</div>
-                      </div>
+                      {/* Total Paid Amount */}
+                      {ClientDisplayUtils.hasValue(emiRestructuring.Total_Paid_Amount) && (
+                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="text-sm text-gray-600">Total Paid Amount</div>
+                          <div className="text-xl font-bold text-gray-900">
+                            {ClientDisplayUtils.formatCurrency(emiRestructuring.Total_Paid_Amount)}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
 
-                {/* Work Information */}
-                {(client.Company_Name || client.Job_Details) && (
-                  <div className="card">
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
-                        <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0V6a2 2 0 012 2v6a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2V6" />
-                        </svg>
-                      </div>
-                      <h2 className="text-lg font-semibold text-gray-900">Work Information</h2>
+                {/* Status & Employment */}
+                <div className="card">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0V6a2 2 0 012 2v6a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2V6" />
+                      </svg>
                     </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                        <div>
-                          <label className="text-sm font-medium text-gray-600">Company Name</label>
-                          <p className="text-gray-900 font-medium">{client.Company_Name || '-'}</p>
-                        </div>
+                    <h2 className="text-lg font-semibold text-gray-900">Status & Employment</h2>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="space-y-4">
+                      {/* Status - Always shown */}
+                      <div>
+                        <label className="text-sm font-medium text-gray-600">Status</label>
+                        <p className="text-gray-900">{client.Current_Status}</p>
+                      </div>
+
+                      {/* Job Details */}
+                      {ClientDisplayUtils.hasValue(client.Job_Details) && (
                         <div>
                           <label className="text-sm font-medium text-gray-600">Job Details</label>
-                          <p className="text-gray-900">{client.Job_Details || '-'}</p>
+                          <p className="text-gray-900">{client.Job_Details}</p>
                         </div>
+                      )}
+
+                      {/* Position Details */}
+                      {ClientDisplayUtils.hasValue(client.Position_Details) && (
                         <div>
                           <label className="text-sm font-medium text-gray-600">Position Details</label>
-                          <p className="text-gray-900">{client.Position_Details || '-'}</p>
+                          <p className="text-gray-900">{client.Position_Details}</p>
                         </div>
-                      </div>
-                      
-                      <div className="space-y-4">
+                      )}
+
+                      {/* Company Name */}
+                      {ClientDisplayUtils.hasValue(client.Company_Name) && (
                         <div>
-                          <label className="text-sm font-medium text-gray-600">Length of Work</label>
-                          <p className="text-gray-900">{client.Length_of_Work || '-'}</p>
+                          <label className="text-sm font-medium text-gray-600">Company Name</label>
+                          <p className="text-gray-900">{client.Company_Name}</p>
                         </div>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {/* Office Address */}
+                      {ClientDisplayUtils.combineAddressLines(client, 'OA') && (
                         <div>
-                          <label className="text-sm font-medium text-gray-600">Department</label>
-                          <p className="text-gray-900">{client.Department || '-'}</p>
+                          <label className="text-sm font-medium text-gray-600">Office Address</label>
+                          <div className="flex items-center gap-2">
+                            <p className="text-gray-900">{ClientDisplayUtils.combineAddressLines(client, 'OA')}</p>
+                            <button
+                              onClick={() => ClientDisplayUtils.copyToClipboard(ClientDisplayUtils.combineAddressLines(client, 'OA')!, 'Office Address')}
+                              className="text-blue-600 hover:text-blue-700"
+                              title="Copy Office Address"
+                            >
+                              📋
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      )}
+
+                      {/* Office RT/RW */}
+                      {ClientDisplayUtils.hasValue(client.OA_RT_RW) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Office RT/RW</label>
+                          <p className="text-gray-900">{client.OA_RT_RW}</p>
+                        </div>
+                      )}
+
+                      {/* Office Sub District */}
+                      {ClientDisplayUtils.hasValue(client.Office_Address_SubDistrict) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Office Sub District</label>
+                          <p className="text-gray-900">{client.Office_Address_SubDistrict}</p>
+                        </div>
+                      )}
+
+                      {/* Office District */}
+                      {ClientDisplayUtils.hasValue(client.Office_Address_District) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Office District</label>
+                          <p className="text-gray-900">{client.Office_Address_District}</p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {/* Office City */}
+                      {ClientDisplayUtils.hasValue(client.Office_Address_City) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Office City</label>
+                          <p className="text-gray-900">{client.Office_Address_City}</p>
+                        </div>
+                      )}
+
+                      {/* Office Province */}
+                      {ClientDisplayUtils.hasValue(client.Office_Address_Province) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Office Province</label>
+                          <p className="text-gray-900">{client.Office_Address_Province}</p>
+                        </div>
+                      )}
+
+                      {/* Office Zipcode */}
+                      {ClientDisplayUtils.hasValue(client.Office_Address_Zipcode) && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-600">Office Zipcode</label>
+                          <div className="flex items-center gap-2">
+                            <p className="text-gray-900">{client.Office_Address_Zipcode}</p>
+                            <button
+                              onClick={() => ClientDisplayUtils.copyToClipboard(client.Office_Address_Zipcode!, 'Office Zipcode')}
+                              className="text-blue-600 hover:text-blue-700"
+                              title="Copy Office Zipcode"
+                            >
+                              📋
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
+                </div>
 
                 {/* Floating Add Contactability Button */}
                 <Link 

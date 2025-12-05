@@ -60,9 +60,23 @@ export interface Client {
   KTP_Province?: string;
   KTP_Postal_Code?: string;
   
+  // Residence Address
+  RA_Line_1?: string;
+  RA_Line_2?: string;
+  RA_Line_3?: string;
+  RA_Line_4?: string;
+  RA_RT_RW?: string;
+  Residence_Address_SubDistrict?: string;
+  RA_District?: string;
+  Residence_Address_City?: string;
+  Residence_Address_Province?: string;
+  RA_Zip_Code?: string;
+
   // Office Address
   OA_Line_1?: string;
   OA_Line_2?: string;
+  OA_Line_3?: string;
+  OA_Line_4?: string;
   OA_RT_RW?: string;
   Office_Address_SubDistrict?: string;
   Office_Address_District?: string;
@@ -97,7 +111,11 @@ export interface Client {
   Age_in_Bank?: string | number;
   Latest_Statement_Due_Date?: string;
   Buy_Back_Status?: string;
+  Rep_Status_Current_Bill?: string;
   Record_Status__s?: string;
+  
+  // Skor User ID for photos
+  Skor_User_ID?: string;
   
   // System Information
   RoboCall_30_60_LastStatus?: string;
