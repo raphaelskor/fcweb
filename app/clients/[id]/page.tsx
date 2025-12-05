@@ -1322,7 +1322,7 @@ export default function ClientDetailsPage() {
                       </div>
                     )}
 
-                    {/* Buy Back Status - Skorcard only */}
+                    {/* Buy Back Status - Skorcard only! */}
                     {ClientDisplayUtils.isSkorCardUser(user?.team) && 
                      ClientDisplayUtils.hasValue(client.Buy_Back_Status) && (
                       <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
