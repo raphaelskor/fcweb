@@ -1,6 +1,5 @@
 FROM node:20-alpine AS base
 WORKDIR /app
-ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 FROM base AS deps
@@ -15,6 +14,7 @@ FROM deps AS prod-deps
 RUN npm prune --omit=dev
 
 FROM base AS runner
+ENV NODE_ENV=production
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
