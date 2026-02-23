@@ -22,4 +22,3 @@ COPY package.json ./
 COPY package-lock.json ./
 EXPOSE 3000
 CMD ["npm", "run", "start"]
-
