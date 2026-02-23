@@ -26,15 +26,38 @@ export default function ClientsPage() {
   // Unique values for filters
   const [uniqueCities, setUniqueCities] = useState<string[]>([]);
 
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
   useEffect(() => {
-    fetchClients();
+    fetchPagination();
   }, []);
+
+  useEffect(() => {
+    fetchClients(currentPage);
+  }, [currentPage]);
 
   useEffect(() => {
     applyFilters();
   }, [clients, searchQuery, cityFilter, sortBy]);
 
-  const fetchClients = async () => {
+  const fetchPagination = async () => {
+    if (!user?.email) return;
+    try {
+      const response = await apiAuth.post('/webhook/269784ce-3a97-4ca7-842e-6e0b2d0405f9', {
+        fi_owner: user.email,
+      });
+      if (response.data && Array.isArray(response.data)) {
+        const pages = response.data[0]?.totalPages || 1;
+        setTotalPages(pages);
+      }
+    } catch (error) {
+      console.error('Fetch pagination error:', error);
+    }
+  };
+
+  const fetchClients = async (page: number = 1) => {
     if (!user?.email) return;
 
     setIsLoading(true);
@@ -43,6 +66,7 @@ export default function ClientsPage() {
     try {
       const response = await apiAuth.post('/webhook/a307571b-e8c4-45d2-9244-b40305896648', {
         fi_owner: user.email,
+        page: page,
       });
 
       if (response.data && Array.isArray(response.data)) {
@@ -63,6 +87,15 @@ export default function ClientsPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const scrollToBottom = () => {
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   };
 
   const applyFilters = () => {
@@ -180,7 +213,7 @@ export default function ClientsPage() {
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
               {error}
-              <button onClick={fetchClients} className="ml-4 underline">
+              <button onClick={() => fetchClients(currentPage)} className="ml-4 underline">
                 Retry
               </button>
             </div>
@@ -266,6 +299,7 @@ export default function ClientsPage() {
             </div>
           </div>
 
+          {/* Retry also refreshes pagination */}
           {/* Loading State */}
           {isLoading ? (
             <div className="space-y-4">
@@ -405,8 +439,71 @@ export default function ClientsPage() {
               )}
             </>
           )}
+
+          {/* Pagination */}
+          {!isLoading && totalPages > 1 && (
+            <div className="mt-6 mb-2 overflow-x-auto">
+              <div className="flex gap-2 justify-end min-w-max pb-1">
+                <button
+                  onClick={() => handlePageChange(1)}
+                  disabled={currentPage === 1}
+                  className="px-3 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-300 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  «
+                </button>
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="px-3 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-300 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ‹
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                  <button
+                    key={page}
+                    onClick={() => handlePageChange(page)}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium min-w-[40px] ${
+                      currentPage === page
+                        ? 'bg-primary-600 text-white border border-primary-600'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-300 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ›
+                </button>
+                <button
+                  onClick={() => handlePageChange(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-300 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  »
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 text-right mt-1">
+                Page {currentPage} of {totalPages}
+              </p>
+            </div>
+          )}
         </main>
       </div>
+
+      {/* Floating Scroll-to-Bottom Button */}
+      <button
+        onClick={scrollToBottom}
+        className="fixed bottom-6 right-6 bg-primary-600 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:bg-primary-700 active:scale-95 transition-transform z-50"
+        aria-label="Scroll to bottom"
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
     </ProtectedRoute>
   );
 }
