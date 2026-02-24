@@ -6,6 +6,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuthStore } from '@/lib/store/authStore';
 import { apiAuth, apiClient } from '@/lib/api/client';
 import { Client } from '@/lib/types';
+import { useClientStore } from '@/lib/store/clientStore';
 import { getClientDisplayName } from '@/lib/utils/formatters';
 
 type Channel = 'Visit' | 'Call' | 'Message';
@@ -136,10 +137,12 @@ export default function ContactabilityFormPage() {
   const params = useParams();
   const clientId = params.id as string;
   const user = useAuthStore((state) => state.user);
+  const getClientById = useClientStore((state) => state.getClientById);
+  const storedPage = useClientStore((state) => state.currentPage);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [client, setClient] = useState<Client | null>(null);
-  const [isLoadingClient, setIsLoadingClient] = useState(true);
+  const [client, setClient] = useState<Client | null>(() => getClientById(clientId) ?? null);
+  const [isLoadingClient, setIsLoadingClient] = useState(() => !getClientById(clientId));
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Auto-filled fields
@@ -215,11 +218,29 @@ export default function ContactabilityFormPage() {
   const fetchClientDetails = async () => {
     if (!user?.email) return;
 
+    // Use cached client if available
+    const cached = getClientById(clientId);
+    if (cached) {
+      setClient(cached);
+      setIsLoadingClient(false);
+      return;
+    }
+
     setIsLoadingClient(true);
 
     try {
+      // Resolve page: store value → sessionStorage map → default 1
+      let page = storedPage;
+      if (page === 1) {
+        try {
+          const map = JSON.parse(sessionStorage.getItem('clientPageMap') || '{}');
+          if (map[clientId]) page = map[clientId];
+        } catch (_) {}
+      }
+
       const response = await apiAuth.post('/webhook/a307571b-e8c4-45d2-9244-b40305896648', {
         fi_owner: user.email,
+        page,
       });
 
       if (response.data && Array.isArray(response.data)) {

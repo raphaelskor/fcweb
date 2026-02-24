@@ -8,10 +8,12 @@ import { useAuthStore } from '@/lib/store/authStore';
 import { apiAuth } from '@/lib/api/client';
 import { Client } from '@/lib/types';
 import { CurrencyFormatter, getClientDisplayName } from '@/lib/utils/formatters';
+import { useClientStore } from '@/lib/store/clientStore';
 
 export default function ClientsPage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
+  const { setPageData, setTotalPages: storeTotalPages } = useClientStore();
   
   const [clients, setClients] = useState<Client[]>([]);
   const [filteredClients, setFilteredClients] = useState<Client[]>([]);
@@ -30,34 +32,38 @@ export default function ClientsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
+  // On mount: fetch pagination first, then fetch the last page of clients
   useEffect(() => {
-    fetchPagination();
+    initPage();
   }, []);
-
-  useEffect(() => {
-    fetchClients(currentPage);
-  }, [currentPage]);
 
   useEffect(() => {
     applyFilters();
   }, [clients, searchQuery, cityFilter, sortBy]);
 
-  const fetchPagination = async () => {
+  const initPage = async () => {
     if (!user?.email) return;
     try {
-      const response = await apiAuth.post('/webhook/269784ce-3a97-4ca7-842e-6e0b2d0405f9', {
-        fi_owner: user.email,
-      });
-      if (response.data && Array.isArray(response.data)) {
-        const pages = response.data[0]?.totalPages || 1;
-        setTotalPages(pages);
-      }
+      // Fetch pagination info and first page of clients in parallel
+      const [paginationResponse] = await Promise.all([
+        apiAuth.post('/webhook/269784ce-3a97-4ca7-842e-6e0b2d0405f9', {
+          fi_owner: user.email,
+        }),
+        fetchClients(1),
+      ]);
+      const pages =
+        paginationResponse.data && Array.isArray(paginationResponse.data)
+          ? paginationResponse.data[0]?.totalPages || 1
+          : 1;
+      setTotalPages(pages);
+      storeTotalPages(pages);
+      setCurrentPage(1);
     } catch (error) {
-      console.error('Fetch pagination error:', error);
+      console.error('Init page error:', error);
     }
   };
 
-  const fetchClients = async (page: number = 1) => {
+  const fetchClients = async (page: number) => {
     if (!user?.email) return;
 
     setIsLoading(true);
@@ -72,6 +78,15 @@ export default function ClientsPage() {
       if (response.data && Array.isArray(response.data)) {
         const clientsData = response.data[0]?.data || [];
         setClients(clientsData);
+        // Save to store for instant access on detail page
+        setPageData(clientsData, page);
+
+        // Persist clientId→page mapping so detail page survives browser refresh
+        try {
+          const existing = JSON.parse(sessionStorage.getItem('clientPageMap') || '{}');
+          clientsData.forEach((c: Client) => { existing[c.id] = page; });
+          sessionStorage.setItem('clientPageMap', JSON.stringify(existing));
+        } catch (_) {}
         
         // Extract unique cities
         const cities = Array.from(new Set(
@@ -91,6 +106,7 @@ export default function ClientsPage() {
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
+    fetchClients(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 

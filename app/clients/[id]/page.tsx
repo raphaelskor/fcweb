@@ -10,6 +10,7 @@ import { apiAuth, apiClient } from '@/lib/api/client';
 import { Client, Contactability } from '@/lib/types';
 import { CurrencyFormatter, DateTimeFormatter, getClientDisplayName } from '@/lib/utils/formatters';
 import { ClientDisplayUtils } from '@/lib/utils/clientDisplayUtils';
+import { useClientStore } from '@/lib/store/clientStore';
 
 // Dynamic import Leaflet to avoid SSR issues
 const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), { ssr: false });
@@ -22,11 +23,14 @@ export default function ClientDetailsPage() {
   const params = useParams();
   const clientId = params.id as string;
   const user = useAuthStore((state) => state.user);
+  const getClientById = useClientStore((state) => state.getClientById);
+  const { setPageData, currentPage: storedPage } = useClientStore();
 
-  const [client, setClient] = useState<Client | null>(null);
+  const [client, setClient] = useState<Client | null>(() => getClientById(clientId) ?? null);
   const [contactHistory, setContactHistory] = useState<Contactability[]>([]);
   const [filteredContactHistory, setFilteredContactHistory] = useState<Contactability[]>([]);
-  const [isLoadingClient, setIsLoadingClient] = useState(true);
+  // If client is already in cache, skip the loading skeleton immediately
+  const [isLoadingClient, setIsLoadingClient] = useState(() => !getClientById(clientId));
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [error, setError] = useState('');
   const [emiRestructuring, setEmiRestructuring] = useState<any>(null);
@@ -57,6 +61,15 @@ export default function ClientDetailsPage() {
     }
   }, [clientId, user?.team]);
 
+  // If the client was already in the cache, skip the loading skeleton
+  useEffect(() => {
+    const cached = getClientById(clientId);
+    if (cached) {
+      setClient(cached);
+      setIsLoadingClient(false);
+    }
+  }, [clientId]);
+
   useEffect(() => {
     // Load photos when client data is available
     if (client) {
@@ -74,27 +87,51 @@ export default function ClientDetailsPage() {
   const fetchClientDetails = async () => {
     if (!user?.email) return;
 
-    setIsLoadingClient(true);
+    // Only show loading skeleton if we don't already have the client cached
+    if (!getClientById(clientId)) {
+      setIsLoadingClient(true);
+    }
     setError('');
 
     try {
+      // Determine which page this client is on:
+      // 1. Use store's currentPage if it's been set (navigated from list)
+      // 2. Fall back to sessionStorage map (survives browser refresh)
+      // 3. Default to page 1
+      let page = storedPage;
+      if (page === 1) {
+        try {
+          const map = JSON.parse(sessionStorage.getItem('clientPageMap') || '{}');
+          if (map[clientId]) page = map[clientId];
+        } catch (_) {}
+      }
+
       const response = await apiAuth.post('/webhook/a307571b-e8c4-45d2-9244-b40305896648', {
         fi_owner: user.email,
+        page,
       });
 
       if (response.data && Array.isArray(response.data)) {
         const clientsData = response.data[0]?.data || [];
+        // Merge fresh data into the store cache
+        if (clientsData.length > 0) {
+          setPageData(clientsData, page);
+        }
         const foundClient = clientsData.find((c: Client) => c.id === clientId);
         
         if (foundClient) {
           setClient(foundClient);
-        } else {
+        } else if (!getClientById(clientId)) {
+          // Not in this page and not in cache — show error
           setError('Client not found');
         }
       }
     } catch (error: any) {
       console.error('Fetch client error:', error);
-      setError('Failed to load client details');
+      // Only show error if we don't already have client data from cache
+      if (!getClientById(clientId)) {
+        setError('Failed to load client details');
+      }
     } finally {
       setIsLoadingClient(false);
     }
