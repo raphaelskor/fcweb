@@ -13,7 +13,7 @@ import { useClientStore } from '@/lib/store/clientStore';
 export default function ClientsPage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
-  const { setPageData, setTotalPages: storeTotalPages } = useClientStore();
+  const { setPageData } = useClientStore();
   
   const [clients, setClients] = useState<Client[]>([]);
   const [filteredClients, setFilteredClients] = useState<Client[]>([]);
@@ -30,7 +30,7 @@ export default function ClientsPage() {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [totalPages, setTotalPages] = useState(5);
 
   // On mount: fetch pagination first, then fetch the last page of clients
   useEffect(() => {
@@ -44,19 +44,7 @@ export default function ClientsPage() {
   const initPage = async () => {
     if (!user?.email) return;
     try {
-      // Fetch pagination info and first page of clients in parallel
-      const [paginationResponse] = await Promise.all([
-        apiAuth.post('/webhook/269784ce-3a97-4ca7-842e-6e0b2d0405f9', {
-          fi_owner: user.email,
-        }),
-        fetchClients(1),
-      ]);
-      const pages =
-        paginationResponse.data && Array.isArray(paginationResponse.data)
-          ? paginationResponse.data[0]?.totalPages || 1
-          : 1;
-      setTotalPages(pages);
-      storeTotalPages(pages);
+      await fetchClients(1);
       setCurrentPage(1);
     } catch (error) {
       console.error('Init page error:', error);
@@ -75,9 +63,12 @@ export default function ClientsPage() {
         page: page,
       });
 
-      if (response.data && Array.isArray(response.data)) {
-        const clientsData = response.data[0]?.data || [];
-        setClients(clientsData);
+      const clientsData = (response.data && Array.isArray(response.data))
+        ? (response.data[0]?.data || [])
+        : [];
+      setClients(clientsData);
+
+      if (clientsData.length > 0) {
         // Save to store for instant access on detail page
         setPageData(clientsData, page);
 
@@ -95,6 +86,8 @@ export default function ClientsPage() {
             .filter((city: string | undefined): city is string => Boolean(city && city.trim()))
         )).sort();
         setUniqueCities(cities as string[]);
+      } else {
+        setUniqueCities([]);
       }
     } catch (error: any) {
       console.error('Fetch clients error:', error);
